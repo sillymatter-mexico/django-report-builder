@@ -21,6 +21,28 @@ import re
 
 AUTH_USER_MODEL = getattr(settings, 'AUTH_USER_MODEL', 'auth.User')
 
+FILTER_TYPE_CHOICES = (
+    ('exact', 'Equals'),
+    ('iexact', 'Equals (case-insensitive)'),
+    ('contains', 'Contains'),
+    ('icontains', 'Contains (case-insensitive)'),
+    ('in', 'in (comma seperated 1,2,3)'),
+    ('gt', 'Greater than'),
+    ('gte', 'Greater than equals'),
+    ('lt', 'Less than'),
+    ('lte', 'Less than equals'),
+    ('startswith', 'Starts with'),
+    ('istartswith', 'Starts with (case-insensitive)'),
+    ('endswith', 'Ends with'),
+    ('iendswith', 'Ends with  (case-insensitive)'),
+    ('range', 'range'),
+    ('week_day', 'Week day'),
+    ('isnull', 'Is null'),
+    ('regex', 'Regular Expression'),
+    ('iregex', 'Reg. Exp. (case-insensitive)'),
+    ('max', 'Max (annotation-filter)'),
+    ('min', 'Min (annotation-filter)'),
+)
 
 def get_allowed_models():
     models = ContentType.objects.all()
@@ -101,9 +123,10 @@ class Report(models.Model):
                 aggregate__isnull=False)
         for display_field in display_fields:
             if display_field.aggregate:
-                func = agg_funcs[display_field.aggregate]
-                full_name = display_field.path + display_field.field
-                queryset = queryset.annotate(func(full_name))
+                if display_field.aggregate != "Filter":
+                    func = agg_funcs[display_field.aggregate]
+                    full_name = display_field.path + display_field.field
+                    queryset = queryset.annotate(func(full_name))
 
         return queryset
 
@@ -161,20 +184,29 @@ class Report(models.Model):
         display_field_properties = []
         display_totals = []
         insert_property_indexes = []
+        aggregate_filters = {}
         choice_lists = {}
         display_formats = {}
         i = 0
+
         for display_field in display_fields:
+            if display_field.aggregate and display_field.aggregate == "Filter":
+                print "omaaaaaaaaaar"
+                aggregate_filters[3] = {"workshop_invite.status": 2}
+
+
             if display_field.total:
                 display_field.total_count = Decimal(0.0)
                 display_totals.append(display_field)
+
             display_field_type = display_field.field_type
+
             if display_field_type == "Property":
                 display_field_properties.append(display_field.field_key)
                 insert_property_indexes.append(i)
             else:
                 i += 1
-                if display_field.aggregate:
+                if display_field.aggregate and display_field.aggregate != "Filter":
                     display_field_paths += [
                         display_field.field_key +
                         '__' + display_field.aggregate.lower()]
@@ -232,6 +264,7 @@ class Report(models.Model):
             data_list = []
             values_index = 0
             for obj in queryset:
+                print "omaaaaaaaaaar", obj
                 display_property_values = []
                 for display_property in display_field_properties:
                     relations = display_property.split('__')
@@ -245,9 +278,11 @@ class Report(models.Model):
                     # Insert in the location dictated by the order of display fields
                     for i, prop_value in enumerate(display_property_values):
                         data_row.insert(insert_property_indexes[i], prop_value)
+
                     for property_filter in property_filters:
                         relations = property_filter.field_key.split('__')
                         val = reduce(getattr, relations, obj)
+
                         if property_filter.filter_property(val):
                             add_row = False
 
@@ -262,7 +297,9 @@ class Report(models.Model):
                                 data_row[position] = text_type(data_row[position])
                         for position, style in display_formats.items():
                             data_row[position] = formatter(data_row[position], style)
+
                         data_list.append(data_row)
+                        
                     values_index += 1
                     try:
                         value_row = values_list[values_index]
@@ -432,9 +469,9 @@ class Format(models.Model):
 
 
 class AbstractField(models.Model):
-    report = models.ForeignKey(Report)
-    path = models.CharField(max_length=2000, blank=True)
-    path_verbose = models.CharField(max_length=2000, blank=True)
+    report = models.ForeignKey(Report, null=True, blank=True)
+    path = models.CharField(max_length=2000, blank=True, null=True)
+    path_verbose = models.CharField(max_length=2000, blank=True, null=True)
     field = models.CharField(max_length=2000)
     field_verbose = models.CharField(max_length=2000)
     position = models.PositiveSmallIntegerField(blank=True, null=True)
@@ -468,16 +505,20 @@ class DisplayField(AbstractField):
     sort_reverse = models.BooleanField(verbose_name="Reverse", default=False)
     width = models.IntegerField(default=15)
     aggregate = models.CharField(
-        max_length=5,
+        max_length=15,
         choices=(
             ('Sum', 'Sum'),
             ('Count', 'Count'),
             ('Avg', 'Avg'),
             ('Max', 'Max'),
             ('Min', 'Min'),
+            ('Filter', 'Filter'),
         ),
         blank = True
     )
+
+    filter_field = models.ForeignKey("FilterField", null=True, blank=True)
+
     total = models.BooleanField(default=False)
     group = models.BooleanField(default=False)
     display_format = models.ForeignKey(Format, blank=True, null=True)
@@ -508,28 +549,7 @@ class FilterField(AbstractField):
     """
     filter_type = models.CharField(
         max_length=20,
-        choices=(
-            ('exact', 'Equals'),
-            ('iexact', 'Equals (case-insensitive)'),
-            ('contains', 'Contains'),
-            ('icontains', 'Contains (case-insensitive)'),
-            ('in', 'in (comma seperated 1,2,3)'),
-            ('gt', 'Greater than'),
-            ('gte', 'Greater than equals'),
-            ('lt', 'Less than'),
-            ('lte', 'Less than equals'),
-            ('startswith', 'Starts with'),
-            ('istartswith', 'Starts with (case-insensitive)'),
-            ('endswith', 'Ends with'),
-            ('iendswith', 'Ends with  (case-insensitive)'),
-            ('range', 'range'),
-            ('week_day', 'Week day'),
-            ('isnull', 'Is null'),
-            ('regex', 'Regular Expression'),
-            ('iregex', 'Reg. Exp. (case-insensitive)'),
-            ('max', 'Max (annotation-filter)'),
-            ('min', 'Min (annotation-filter)'),
-        ),
+        choices=FILTER_TYPE_CHOICES,
         blank=True,
         default = 'icontains',
     )

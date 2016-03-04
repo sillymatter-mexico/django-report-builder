@@ -12,23 +12,45 @@ class FormatSerializer(serializers.ModelSerializer):
         model = Format
 
 
-class DisplayFieldSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = DisplayField
-        fields = ('id', 'path', 'path_verbose', 'field', 'field_verbose',
-                  'name', 'sort', 'sort_reverse', 'width', 'aggregate',
-                  'position', 'total', 'group', 'report', 'display_format',
-                  'field_type')
-        read_only_fields = ('id')
+
 
 
 class FilterFieldSerializer(serializers.ModelSerializer):
+
     class Meta:
         model = FilterField
         fields = ('id', 'path', 'path_verbose', 'field', 'field_verbose',
                   'field_type', 'filter_type', 'filter_value', 'filter_value2',
                   'exclude', 'position', 'report')
         read_only_fields = ('id', 'field_type')
+
+class DisplayFieldSerializer(serializers.ModelSerializer):
+    filter_field = FilterFieldSerializer(required=False, many=False, allow_null=True)
+
+    def validate(self, data):
+        try:
+            data["aggregate"]
+        except KeyError, e:
+            return data
+
+        if data["aggregate"] == "Filter":
+            filter_field = FilterField()
+            for key, value in data["filter_field"].items():
+                setattr(filter_field, key, value)
+
+            filter_field.save()
+            data["filter_field"] = filter_field
+
+        return data
+
+
+    class Meta:
+        model = DisplayField
+        fields = ('id', 'path', 'path_verbose', 'field', 'field_verbose',
+                  'name', 'sort', 'sort_reverse', 'width', 'aggregate',
+                  'position', 'total', 'group', 'report', 'display_format',
+                  'field_type', 'filter_field')
+        read_only_fields = ('id')
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -42,6 +64,7 @@ class ReportSerializer(serializers.HyperlinkedModelSerializer):
         queryset=Report.allowed_models())
     root_model_name = serializers.StringRelatedField(source='root_model')
     user_created = UserSerializer(read_only=True)
+
 
     class Meta:
         model = Report
@@ -84,16 +107,25 @@ class ReportNestedSerializer(ReportSerializer):
                 'distinct', instance.distinct)
             instance.modified = datetime.date.today()
             instance.save()
+
+            for displayfield_data in instance.displayfield_set.all():
+                 if displayfield_data.aggregate == "Filter":
+                    displayfield_data.filter_field.delete()
+
             instance.displayfield_set.all().delete()
+
             for displayfield_data in displayfields_data:
                 display_field = DisplayField()
                 for key, value in displayfield_data.items():
                     setattr(display_field, key, value)
+
                 display_field.save()
             instance.filterfield_set.all().delete()
+
             for filterfield_data in filterfields_data:
                 filter_field = FilterField()
                 for key, value in filterfield_data.items():
                     setattr(filter_field, key, value)
                 filter_field.save()
+
         return instance

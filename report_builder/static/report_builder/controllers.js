@@ -22,6 +22,19 @@ reportBuilderApp.controller('homeCtrl', function($scope, $routeParams, $location
     $scope.formats = data;
   });
 
+  $scope.fieldAggregateChange = function(field) {
+    if (field.aggregate != 'Filter') {
+      field.filter_field = null
+    }else { 
+      if (!field.filter_field) {
+        field.filter_field = {}
+      }
+
+      field.filter_field.field = field.field
+      field.filter_field.field_verbose = field.field_verbose
+    }
+  }
+
   $scope.reports_list_menu = function() {
     $mdSidenav('left').open();
   };
@@ -197,6 +210,8 @@ reportBuilderApp.controller('FieldsCtrl', function($scope, $mdSidenav, reportSer
     });
   }
 
+
+
   $scope.toggle_related_fields = function(node) {
     field = node.$nodeScope.$modelValue;
     parent_field = node.$parent.$modelValue;
@@ -276,6 +291,7 @@ reportBuilderApp.controller('ReportShowCtrl', function($scope, $window, $http, $
   };
 
   $scope.save = function() {
+    console.log("omar", $scope.report)
     angular.forEach($scope.report.displayfield_set, function(value, index) {
       value.position = index;
       if (value.sort === "") {
